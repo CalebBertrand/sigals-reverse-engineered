@@ -3,7 +3,7 @@ import { signal, computed, untrackedValue } from './signal.js';
 
 const counter = signal(0);
 const doubled = computed(() => counter() * 2, true);
-const tripled = computed(() => doubled() + counter(), true);
+const tripled = computed(() => doubled() + untrackedValue(counter), true);
 
 // const counter2 = signal(0);
 // const summed = computed(() => counter() + untrackedValue(counter2));
@@ -38,7 +38,7 @@ function updateCounter(newValue) {
 
   // Using timeout to simulate the render phase in frameworks like angular
   setTimeout(() => {
-    header.textContent = `Counter value: ${counter()} Triple Value: ${tripled()}`;
+    header.textContent = `Counter value: ${counter()} Double Value: ${doubled()} Triple Value: ${tripled()}`;
   });
 }
 incrementBtn.addEventListener('click', () => updateCounter(counter() + 1));
