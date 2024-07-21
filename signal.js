@@ -6,8 +6,11 @@ const PRIV_PROPS = Symbol('CalebsSignalImplementation');
 // Helper to get the value of a signal without registering with any wrapping context
 export const untrackedValue = (s) => s[PRIV_PROPS].getValueDirectly();
 
+// Internal helper to set values on signals, even ones with no public set function
+const setValue = (s, value) => s[PRIV_PROPS].set(value);
+
 // The core functionality of a signal, used by both `signal` and `computed`
-const createSignal = (initialValue) => {
+const createSignal = (initialValue, writable) => {
   let value = initialValue;
   let consumerCtxs = new IterableWeakSet(); // unfortunately can't use WeakSet because that is not enumerable
 
@@ -26,7 +29,8 @@ const createSignal = (initialValue) => {
     }
     return value;
   };
-  signalFunction.set = (newValue) => {
+  
+  const set = (newValue) => {
     const isSameValue = value === newValue;
     value = newValue;
     [...consumerCtxs].forEach((consumerCtx) => {
@@ -35,20 +39,24 @@ const createSignal = (initialValue) => {
       consumerCtx.requestRecompute(signalFunction);
     });
   };
+  if (writable) {
+    signalFunction.set = set;
+  }
 
   signalFunction[PRIV_PROPS] = {
     getValueDirectly: () => value, // provide a way to get the value without worrying about any registering etc
+    set: set
   };
 
   return signalFunction;
 };
 
 export const signal = (initialValue) => {
-  return createSignal(initialValue);
+  return createSignal(initialValue, true);
 };
 
 export const computed = (computationFunc, pure = false) => {
-  const innerSignal = createSignal(undefined); // We will populate the value once we make sure the wrapping context is set up. The reason we use a signal internally is so that this `computed` can be nested in other `computed`s and still work as a signal
+  const innerSignal = createSignal(undefined, false); // We will populate the value once we make sure the wrapping context is set up. The reason we use a signal internally is so that this `computed` can be nested in other `computed`s and still work as a signal
 
   const cachedResults = new Map(); // Maps a hash of each signal value input combination to the output value
 
@@ -59,7 +67,7 @@ export const computed = (computationFunc, pure = false) => {
     const previousCtx = currentConsumerCtx;
     currentConsumerCtx = context;
     const value = computationFunc();
-    innerSignal.set(value);
+    setValue(innerSignal, value);
     currentConsumerCtx = previousCtx; // Makes sure the context is returned to any wrapping `computed`
     return value;
   };
@@ -76,7 +84,7 @@ export const computed = (computationFunc, pure = false) => {
         const hashedInputs = hash(currentInputValues);
 
         if (cachedResults.has(hashedInputs)) {
-          innerSignal.set(cachedResults.get(hashedInputs));
+          setValue(innerSignal, cachedResults.get(hashedInputs));
         } else {
           // We have no cached results so calculate
           cachedResults.set(hashedInputs, compute());
@@ -107,10 +115,5 @@ export const computed = (computationFunc, pure = false) => {
   };
   compute(); // sets the initial value for this `computed`
 
-  // Only expose the getter function, `computed` is read-only
-  const getter = () => {
-    return innerSignal();
-  };
-
-  return getter;
+  return innerSignal;
 };
